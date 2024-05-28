@@ -2,6 +2,8 @@ package com.example.ugoke;
 
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
 import android.location.Location;
 import android.location.LocationManager;
 import android.os.Bundle;
@@ -23,9 +25,11 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 import android.location.LocationListener;
+import android.hardware.Sensor;
+import android.hardware.SensorManager;
 
 
-public class NotificationActivity extends AppCompatActivity implements LocationListener{
+public class NotificationActivity extends AppCompatActivity implements LocationListener, SensorEventListener{
 
     Button stopBtn;
     private TextView alarmText;
@@ -35,6 +39,18 @@ public class NotificationActivity extends AppCompatActivity implements LocationL
     private LocationManager mLocationManager;
     private Location initialLocation;
     private static final float DISTANCE_THRESHOLD = 5.0f; // 5メートル
+    private float remainingDistance1 = 5.0f;
+
+    private float remainingDistance2 = 5.0f;
+
+    private float remainingDistance = 5.0f;
+    private static final float ACC_THRESHOLD = 0.5f; // 移動を検知するための加速度の閾値
+    private float lastAcc = 0.0f; // 前回の加速度の値
+
+    private SensorManager sensorManager;
+    private Sensor accelerometerSensor;
+    private float lastVelocity = 0; // 直前の速度
+    private float lastPosition = 0; // 直前の位置
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,10 +75,14 @@ public class NotificationActivity extends AppCompatActivity implements LocationL
         distanceTextView = findViewById(R.id.distanceTextView);
 
         mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        // センサーマネージャーを取得
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        // 加速度センサーを取得
+        accelerometerSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
 
         startService(new Intent(this, SoundService.class));
-
+        distanceTextView.setText(String.format("残り%.2fメートル", remainingDistance));
         stopBtn = (Button) findViewById(R.id.stopBtn);
         stopBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -98,6 +118,8 @@ public class NotificationActivity extends AppCompatActivity implements LocationL
         }
 
         mLocationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 500, 0, this);
+        // 加速度センサーのリスナーを登録
+        sensorManager.registerListener( this, accelerometerSensor, SensorManager.SENSOR_DELAY_NORMAL);
     }
 
     @Override
@@ -109,29 +131,93 @@ public class NotificationActivity extends AppCompatActivity implements LocationL
                 return;
             }
         }
+        // アプリが非アクティブになったときにセンサーリスナーを解除
+        sensorManager.unregisterListener(this);
     }
 
     @Override
     public void onLocationChanged(@NonNull Location location) {
-
-        Log.d("Location", "onLocationChanged: " + location.toString());
-
         if (initialLocation == null) {
             initialLocation = location;
             Log.d("initialLocation", "onLocationChanged: " + initialLocation.toString());
         }
+        wifiDistanceCheck(location, initialLocation);
+
+        updateDistance();
+
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        sensorDistanceCheck(event);
+        updateDistance();
+
+    }
+
+
+    private void wifiDistanceCheck(Location location, Location initialLocation) {
+        // Wifiを使用して5メートル進んだかどうかを判断する処理
+
 
         float distance = location.distanceTo(initialLocation);
-        Log.d("distance", "onLocationChanged: " + distance);
-        float remainingDistance = DISTANCE_THRESHOLD - distance;
-        Log.d("remainingDistance", "onLocationChanged: " + remainingDistance);
+        remainingDistance1 = DISTANCE_THRESHOLD - distance;
+        Log.d("remainingDistance1", "onLocationChanged1: " + remainingDistance1);
+
+    }
+
+
+    private void sensorDistanceCheck(SensorEvent event) {
+        // 加速度センサーの値が変化したときの処理
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            float deltaTime = 0.1f;
+            // 加速度の値を取得
+            float acc = event.values[0];
+            // 加速度の変化量を計算
+            float deltaAcc = Math.abs(acc - lastAcc);
+            // 加速度が閾値以上変化した場合は移動と判断
+            if (deltaAcc > ACC_THRESHOLD) {
+                // 加速度を積分して速度を計算
+                float velocity = lastVelocity + acc * deltaTime;
+
+                // 速度を積分して位置を計算
+                float position = lastPosition + velocity * deltaTime;
+
+                // 移動距離を計算
+                float distance = position - lastPosition;
+
+                // 残りの距離を更新
+                remainingDistance2 = DISTANCE_THRESHOLD - Math.abs(distance);
+
+                // 位置と速度を更新
+                lastPosition = position;
+                lastVelocity = velocity;
+
+            }
+
+            // 現在の加速度を保存
+            lastAcc = acc;
+
+        }
+
+        Log.d("remainingDistance2", "onLocationChanged2: " + remainingDistance2);
+    }
+
+
+
+
+
+
+    public void updateDistance(){
+        remainingDistance = Math.min(remainingDistance1, remainingDistance2);
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                distanceTextView.setText(String.format("%.2f meters left", remainingDistance));
+                distanceTextView.setText(String.format("残り%.2fメートル", remainingDistance));
             }
         });
-        if (distance >= DISTANCE_THRESHOLD) {
+
+
+        if(remainingDistance <= 0){
             Log.d("distance", "5m");
             // 初期位置から5メートル以上離れた場合の処理
             stopService(new Intent(NotificationActivity.this, SoundService.class));
@@ -139,11 +225,11 @@ public class NotificationActivity extends AppCompatActivity implements LocationL
             if (mLocationManager != null) {
                 mLocationManager.removeUpdates(this);
             }
-
-        } else {
-            // 継続して位置情報を取得する
-            // 残り距離を表示する
-
         }
     }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int i) {
+
     }
+}
