@@ -83,14 +83,14 @@ public class NotificationActivity extends AppCompatActivity implements LocationL
 
         startService(new Intent(this, SoundService.class));
         distanceTextView.setText(String.format("残り%.2fメートル", remainingDistance));
-        stopBtn = (Button) findViewById(R.id.stopBtn);
-        stopBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                stopService(new Intent(NotificationActivity.this, SoundService.class));
-                finish();
-            }
-        });
+//        stopBtn = (Button) findViewById(R.id.stopBtn);
+//        stopBtn.setOnClickListener(new View.OnClickListener() {
+//            @Override
+//            public void onClick(View view) {
+//                stopService(new Intent(NotificationActivity.this, SoundService.class));
+//                finish();
+//            }
+//        });
 
 
 
